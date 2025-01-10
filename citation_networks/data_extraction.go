@@ -1,4 +1,10 @@
-package main
+package citation
+
+/*
+This file extracts data for citation network from turtle (.ttl) file. It not only extracts connections between different
+citations, but also extracts some of the key elements from each link. It extracts keywords and text which is transformed
+and saved as an embedding.
+*/
 
 import (
 	"encoding/json"
@@ -11,74 +17,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/jmCodeCraft/go-network/model"
 	"github.com/nvkp/turtle"
 )
-
-//"github.com/jmCodeCraft/go-network/model"
-
-func Create_graph(file_name string) *model.NewGraph {
-	file, err := os.Open(file_name)
-	if err != nil {
-		fmt.Println("Error opening file:", err)
-		return nil
-	}
-	defer file.Close()
-
-	// Declare a map to hold the data
-	var all_atribute_map map[string]map[string]interface{}
-
-	// Decode the JSON data into the map
-	decoder := json.NewDecoder(file)
-	if err := decoder.Decode(&all_atribute_map); err != nil {
-		fmt.Println("Error decoding JSON:", err)
-		return nil
-	}
-
-	g := model.NewGraph{
-		Nodes: map[string]model.NewNode{},
-		Edges: map[int]model.NewEdge{},
-	}
-
-	for key, value := range all_atribute_map {
-		g.AddNode(model.NewNode{
-			ID:         key,
-			Attributes: value,
-		})
-	}
-
-	for _, node := range g.Nodes {
-		if node.Attributes["neighbors"] == nil {
-			continue
-		}
-		strings := make([]string, len(node.Attributes["neighbors"].([]interface{})))
-		for i, v := range node.Attributes["neighbors"].([]interface{}) {
-			// Perform type assertion
-			str, ok := v.(string)
-			if !ok {
-				fmt.Printf("Value at index %d is not a string\n", i)
-				continue
-			}
-			strings[i] = str
-		}
-
-		for _, neighbor := range strings {
-			g.AddEdge(model.NewEdge{
-				First_node:  node,
-				Second_node: g.Nodes[neighbor],
-				Attributes:  map[string]interface{}{},
-			})
-		}
-		delete(node.Attributes, "neighbors")
-	}
-
-	fmt.Println("Graph creation successful!")
-
-	return &g
-
-}
 
 type Triple struct {
 	Subject   string `turtle:"subject"`
@@ -93,21 +34,19 @@ func OnPage(link string) map[string]interface{} {
 	}
 	defer res.Body.Close()
 
-	// Create a map to store the parsed JSON
-	var result map[string]interface{}
-
 	// Read the response body
 	content, err := io.ReadAll(res.Body)
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	// Create a map to store the parsed JSON
+	var result map[string]interface{}
+
 	// Parse the JSON into the map
 	err = json.Unmarshal(content, &result)
 	if err != nil {
-		return nil
-		//log.Printf("Failed to parse JSON. Content: %s\n", content)
-		//log.Fatal("Error parsing JSON:", err)
+		log.Fatal("Error parsing JSON:", err)
 	}
 
 	return result
@@ -220,22 +159,19 @@ func Extract(file_name string) string {
 	}
 
 	allAttributes := make(map[string]map[string]interface{})
-	i := 0
 	for _, triple := range triples {
-		fmt.Println(i)
-		i++
 		_, ok1 := allAttributes[triple.Subject]
 		_, ok2 := allAttributes[triple.Object]
 		if !ok1 {
-			//	str := strings.Replace(triple.Subject, "https://semopenalex.org/work", "https://api.openalex.org/works", 1)
-			//	api_map := OnPage(str)
-			allAttributes[triple.Subject] = map[string]interface{}{} // GetNodeAttributes(api_map)
+			str := strings.Replace(triple.Subject, "https://semopenalex.org/work", "https://api.openalex.org/works", 1)
+			api_map := OnPage(str)
+			allAttributes[triple.Subject] = /*map[string]interface{}{}*/ GetNodeAttributes(api_map)
 		}
 
 		if !ok2 {
-			//	str := strings.Replace(triple.Object, "https://semopenalex.org/work", "https://api.openalex.org/works", 1)
-			//	api_map := OnPage(str)
-			allAttributes[triple.Object] = map[string]interface{}{} //GetNodeAttributes(api_map)
+			str := strings.Replace(triple.Object, "https://semopenalex.org/work", "https://api.openalex.org/works", 1)
+			api_map := OnPage(str)
+			allAttributes[triple.Object] = /*map[string]interface{}{}*/ GetNodeAttributes(api_map)
 		}
 		_, exists := allAttributes[triple.Subject]["neighbors"]
 
@@ -247,7 +183,7 @@ func Extract(file_name string) string {
 		allAttributes[triple.Subject]["neighbors"] = append(allAttributes[triple.Subject]["neighbors"].([]string), triple.Object)
 	}
 
-	newfile_name := "citation_network_tiny_extracted_data_test.json"
+	newfile_name := "citation_network_tiny_extracted_data.json"
 
 	newfile, err := os.Create(newfile_name)
 	if err != nil {
@@ -266,64 +202,3 @@ func Extract(file_name string) string {
 	fmt.Println("Data extraction succesful!")
 	return newfile_name
 }
-
-func main() {
-	start := time.Now()
-	extracted_file_name := "citation_network_tiny_extracted_data.json"
-	g := Create_graph(extracted_file_name)
-	fmt.Println(len(g.Edges), len(g.Nodes))
-
-	/*keywords := make(map[string]int)
-	reverse_keywords := []string{}
-	node_to_keywords := make(map[string][]int)
-	counter := 0*/
-
-	g.CombineLeaves()
-
-	fmt.Println(len(g.Edges), len(g.Nodes))
-
-	/*for _, node := range g.Nodes {
-		if w, ok := node.Attributes["keywords"].([]string); ok {
-			// Iterate over the slice
-			for _, key := range w {
-				if _, exists := keywords[key]; !exists {
-					keywords[key] = counter
-					counter++
-					reverse_keywords = append(reverse_keywords, key)
-				}
-				node_to_keywords[node.ID] = append(node_to_keywords[node.ID], keywords[key])
-			}
-		} else {
-			fmt.Println("keywords is not a slice of strings")
-			fmt.Println(reflect.TypeOf(node.Attributes["keywords"]))
-		}
-	}
-
-	for i := range reverse_keywords {
-		fmt.Println(reverse_keywords[i], i, keywords[reverse_keywords[i]])
-	}*/
-
-	g.WriteToFile("graph_data.json")
-
-	fmt.Println("Success")
-
-	elapsed := time.Since(start)
-	fmt.Println(elapsed)
-
-}
-
-//TODO: download spletnih strani posebej, skupaj z embeddingi in podobno
-//potem posebej sestavljanje grafa
-//izmeri čas za vsak korak posebej: branje podatkov, ustvarjanje grafa, redčenje grafa
-//dokumentacija novih metod
-//datasete v gitignore
-
-//graph creation tiny: 200-300ms
-//graph creatin & dilution tiny: 500-550ms
-//graph to pyg format tiny: ~6500000ns
-//shallow embedding of graph tiny: ~15000000ns
-
-//graph creation: 5min30s - 6min
-//graph creatin & dilution tiny: ~45min
-//graph to pyg format tiny: 45-50s
-//shallow embedding of graph tiny: ~0,1s

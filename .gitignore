@@ -21,3 +21,7 @@
 go.work
 *.idea
 *.DS_Store
+
+#in between saved files
+*.json
+*.pt
